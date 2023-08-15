@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  labels:
+    name: mysql
+spec:
+  serviceName: mysql
+  replicas: 3
+  selector:
+    matchLabels:
+      name: mysql
+  template:
+    metadata:
+      labels:
+        name: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: arm64v8/mysql:latest
+        ports:
+        - containerPort: 3306
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-root-credentails
+              key: password    
+        lifecycle:
+          postStart:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 60"]
+        imagePullPolicy: Always        
+        volumeMounts:
+        - name: conf-vol
+          mountPath: /etc/my.cnf
+          subPath: my.cnf
+        - name: conf-vol
+          mountPath: /mnt/data
+        - name: conf-vol
+          mountPath: /docker-entrypoint-initdb.d/a-init-netclam-db.sql
+          subPath: a-init-netclam-db.sql
+        - name: conf-vol
+          mountPath: /docker-entrypoint-initdb.d/b-init-mysql-cluster.sql
+          subPath: b-init-mysql-cluster.sql
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+      nodeSelector:
+        netclam-node-type: control-plane
+      initContainers:
+      - name: init-set
+        image: alpine:latest
+        env:
+        - name: NETCLAM_CP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: netclam-cp-credentials
+              key: password
+        - name: NETCLAM_DP_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: netclam-dp-credentials
+              key: password                
+        command:
+        - /mnt/scripts/run.sh
+        volumeMounts:
+        - name: scripts-vol
+          mountPath: /mnt/scripts
+        - name: conf-vol
+          mountPath: /mnt/data
+      volumes:
+      - name: scripts-vol
+        configMap:
+          name: mysql-config-map
+          defaultMode: 0555
+      - name: conf-vol
+        emptyDir: {}

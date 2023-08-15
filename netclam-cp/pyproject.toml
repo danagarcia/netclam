@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "netclam-cp"
+version = "0.1.0"
+description = ""
+authors = ["Dana Garcia <dana_sean_garcia@live.com>"]
+readme = "README.md"
+packages = [{include = "netclam_cp"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+mysql-connector-python = "^8.1.0"
+fastapi = "^0.100.1"
+dataclasses-serialization = "^1.3.1"
+python-multipart = "^0.0.6"
+uvicorn = "^0.23.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

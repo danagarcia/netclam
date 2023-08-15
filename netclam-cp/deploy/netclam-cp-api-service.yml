@@ -1,0 +1,16 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: netclam-cp
+  labels:
+    name: netclam-cp
+spec:
+  type: LoadBalancer
+  selector: 
+    app: netclam-cp
+  ports:
+  - name: netclam-cp-svc
+    protocol: TCP
+    port: 11590
+    targetPort: 8080
+    nodePort: 30626

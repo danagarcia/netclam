@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mysql-config-map
+data:
+  run.sh: |
+    #!/bin/sh
+    sleep 30
+    SET_INDEX=${HOSTNAME##*-}
+    REPLICA_COUNT=3
+    NODE_FQDN_TMPL=mysql-NUM.mysql.default.svc.cluster.local
+    WHITELIST=$(for ID in $(seq "$REPLICA_COUNT"); do echo -n $NODE_FQDN_TMPL | sed "s/NUM/$(($ID-1))/g"; if [ "$REPLICA_COUNT" != "$ID" ]; then echo -n ","; fi; done)
+    GROUP_SEEDS=$(echo $WHITELIST | sed 's/.local/.local:33061/g')
+    echo "Starting initializing for pod $SET_INDEX"
+    cp /mnt/scripts/my.cnf /mnt/data/my.cnf
+    sed -i "s/SERVER_ID/$(($SET_INDEX+1))/g" /mnt/data/my.cnf
+    sed -i "s/NODE_NUM/$SET_INDEX/g" /mnt/data/my.cnf
+    sed -i "s/WHITELIST/$WHITELIST/g" /mnt/data/my.cnf
+    sed -i "s/GROUP_SEEDS/$GROUP_SEEDS/g" /mnt/data/my.cnf
+    cp /mnt/scripts/init-mysql.sql /mnt/data/b-init-mysql-cluster.sql
+    touch /mnt/data/auto.cnf
+    nc -w 2 -v mysql.default.svc.cluster.local 3306 </dev/null;
+    if [[ $? -ne 1 ]]
+      then
+        echo "####### AUTOMATED CONFIG APPEND START ###############"  >> /mnt/data/my.cnf
+        echo "loose-group_replication_bootstrap_group = OFF" >> /mnt/data/my.cnf
+        echo "####### AUTOMATED CONFIG APPEND END   ###############"  >> /mnt/data/my.cnf
+        touch /mnt/data/a-init-netclam-db.sql
+        sed -i 's/#RESET MASTER/RESET MASTER/g' /mnt/data/b-init-mysql-cluster.sql
+      else
+        echo "####### AUTOMATED CONFIG APPEND START ###############"  >> /mnt/data/my.cnf
+        echo "loose-group_replication_bootstrap_group = ON" >> /mnt/data/my.cnf
+        cp /mnt/scripts/init-netclam-db.sql /mnt/data/a-init-netclam-db.sql
+        sed -i "s/NETCLAM_CP_PASSWORD/$NETCLAM_CP_PASSWORD/g" /mnt/data/a-init-netclam-db.sql
+        sed -i "s/NETCLAM_DP_PASSWORD/$NETCLAM_DP_PASSWORD/g" /mnt/data/a-init-netclam-db.sql
+        echo "####### AUTOMATED CONFIG APPEND END   ###############"  >> /mnt/data/my.cnf
+    fi 
+    cat /mnt/data/my.cnf
+  my.cnf: |
+    [mysqld]
+
+    ########################## GROUP REPLICATION CONFIG START #########################################
+
+    # General replication settings
+    gtid_mode = ON
+    enforce_gtid_consistency = ON
+    master_info_repository = TABLE
+    relay_log_info_repository = TABLE
+    binlog_checksum = NONE
+    log_slave_updates = ON
+    log_bin = binlog
+    binlog_format = ROW
+    transaction_write_set_extraction = XXHASH64
+    default_authentication_plugin=mysql_native_password
+    loose-group_replication_start_on_boot = ON
+    loose-group_replication_autorejoin_tries = 3
+    loose-group_replication_group_name = "85cbd4a0-7338-46f1-b15e-28c1a26f465e"
+    loose-group_replication_ip_whitelist = "WHITELIST"
+    loose-group_replication_group_seeds = "GROUP_SEEDS"
+    loose-group_replication_single_primary_mode = OFF
+    loose-group_replication_enforce_update_everywhere_checks = ON
+
+    # Host specific replication configuration
+    server_id = SERVER_ID
+    server-id = SERVER_ID
+    bind-address = "mysql-NODE_NUM.mysql.default.svc.cluster.local"
+    report_host = "mysql-NODE_NUM.mysql.default.svc.cluster.local"
+    loose-group_replication_local_address = "mysql-NODE_NUM.mysql.default.svc.cluster.local:33061"
+
+    #########################  GROUP REPLICATION CONFIG END ###########################################
+    
+    skip-host-cache
+    skip-name-resolve
+    datadir=/var/lib/mysql
+    socket=/var/lib/mysql/mysql.sock
+    secure-file-priv=/var/lib/mysql-files
+    user=mysql
+    symbolic-links=0
+    relay_log=mysql-0-relay-bin
+    pid-file=/var/run/mysqld/mysqld.pid
+  init-mysql.sql: |
+    ######################### GR CLUSTER CONFIGS START ####################
+    SET SQL_LOG_BIN=0;
+    CREATE USER 'repl'@'%' IDENTIFIED WITH mysql_native_password BY 'repl';
+    GRANT REPLICATION SLAVE ON *.* TO 'repl'@'%';
+    GRANT CONNECTION_ADMIN ON *.* TO 'repl'@'%';
+    GRANT GROUP_REPLICATION_STREAM ON *.* TO 'repl'@'%';
+    GRANT BACKUP_ADMIN ON *.* TO 'repl'@'%';
+    FLUSH PRIVILEGES;
+    SET SQL_LOG_BIN=1;
+    #RESET MASTER;
+    CHANGE REPLICATION SOURCE TO SOURCE_USER='repl', SOURCE_PASSWORD='repl' FOR CHANNEL 'group_replication_recovery';
+    INSTALL PLUGIN group_replication SONAME 'group_replication.so';
+    ######################### GR CLUSTER CONFIGS END ######################
+  init-netclam-db.sql: |
+    # Create Database
+    CREATE DATABASE netclam;
+    # Select Database
+    USE netclam;
+    # Create Table
+    CREATE TABLE requests (rowkey MEDIUMINT NOT NULL PRIMARY KEY AUTO_INCREMENT, id VARCHAR(36) NOT NULL, status TEXT NOT NULL, created_time TEXT NOT NULL, updated_time TEXT NOT NULL);
+    CREATE TABLE files (rowkey MEDIUMINT NOT NULL PRIMARY KEY AUTO_INCREMENT, request_id VARCHAR(36) NOT NULL, name TEXT NOT NULL);
+    CREATE TABLE results (rowkey MEDIUMINT NOT NULL PRIMARY KEY AUTO_INCREMENT, request_id VARCHAR(36) NOT NULL, decision TEXT NOT NULL, decision_time TEXT NOT NULL);
+    # Create Users
+    CREATE USER 'netclam-cp-svc'@'%' IDENTIFIED BY 'NETCLAM_CP_PASSWORD';
+    CREATE USER 'netclam-dp-svc'@'%' IDENTIFIED BY 'NETCLAM_DP_PASSWORD';
+    # CP User Permissions
+    GRANT INSERT, SELECT on netclam.requests TO 'netclam-cp-svc'@'%' WITH GRANT OPTION;
+    GRANT INSERT, SELECT on netclam.files TO 'netclam-cp-svc'@'%' WITH GRANT OPTION;
+    GRANT SELECT on netclam.results TO 'netclam-cp-svc'@'%' WITH GRANT OPTION;
+    # DP User Permissions
+    GRANT UPDATE on netclam.requests TO 'netclam-dp-svc'@'%' WITH GRANT OPTION;
+    GRANT INSERT, SELECT on netclam.results TO 'netclam-dp-svc'@'%' WITH GRANT OPTION;

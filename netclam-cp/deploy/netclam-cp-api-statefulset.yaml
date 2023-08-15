@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: netclam-cp
+spec:
+  serviceName: netclam-cp
+  selector:
+    matchLabels:
+      app: netclam-cp
+      app.kubernetes.io/name: netclam-cp
+  replicas: 3
+  template:
+    metadata:
+      labels:
+        app: netclam-cp
+        app.kubernetes.io/name: netclam-cp
+    spec:
+      containers:
+      - name: netclam-cp
+        image: danagarcia/netclam-cp:latest
+        imagePullPolicy: Always
+        env:
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: netclam-cp-credentials
+              key: username
+        - name: MYSQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: netclam-cp-credentials
+              key: password
+        - name: MYSQL_DATABASE
+          value: "netclam"
+        - name: MYSQL_ENDPOINT
+          value: "mysql.default.svc.cluster.local"
+        ports:
+        - containerPort: 8080
+          name: netclam-cp-svc
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: netclam-data-pvc
+      nodeSelector:
+        netclam-node-type: control-plane
