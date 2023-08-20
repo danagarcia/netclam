@@ -1,43 +1,32 @@
-from handlers.database import get_request_status, get_result, create_request
-from handlers.uploads import write_file
 from dataclasses_serialization.json import JSONSerializer
-from models import request_status
-from fastapi import FastAPI, UploadFile, HTTPException
-from netclam_cp import version, api_name, file_directory
+from fastapi import FastAPI, HTTPException
+from netclam_cp import version, api_name
+from netclam_common.exception import FileNotFoundException, RequestNotFoundException, ResultNotFoundException
+from netclam_common.database import get_file, get_request, get_result
+from netclam_common.models.request import PENDING, COMPLETE
 from typing import Union
-import json
+import uvicorn
 
-api_root = f"/v{version}/{api_name}"
-
-print(api_root)
+apiRoot = f"/v{version}/{api_name}"
 
 app = FastAPI()
 
-@app.get(api_root)
-async def get_scan(request_id: Union[str, None] = None):
-    if request_id == None:
-        raise HTTPException(status_code=400, detail="Please provide a request_id in UUID format")
+@app.get(apiRoot)
+async def get_scan(id: Union[str, None] = None):
+    if id is None:
+        raise HTTPException(status_code=400, detail="Invalid Request ID")
     try:
-        status = get_request_status(request_id)
-    except Exception as exc:
-        raise HTTPException(status_code=404, detail="Request not found.") from exc
-    if status == request_status.PENDING:
-        return {
-            status: request_status.PENDING
-        }
-    elif status == request_status.COMPLETE:
-        try:
-            result = get_result(request_id)
-        except Exception as exc:
-            print(exc)
-            raise HTTPException(status_code=404, detail="Result not found.") from exc
-        return JSONSerializer.serialize(result)
-    
-@app.post(api_root)
-async def create_scan(file: UploadFile):
-    request = create_request(file.filename)
-    try:
-        write_file(request.id, file)
-    except:
-        raise HTTPException(status_code=500, detail="An error occurred while storing the file.")
-    return JSONSerializer.serialize(request)
+        request = get_request(id)
+        request_json = JSONSerializer.serialize(request)
+        request_json['file'] = JSONSerializer.serialize(get_file(id))
+        if request.status == PENDING:
+            return request_json
+        request_json['result'] = JSONSerializer.serialize(get_result(id))
+        return request_json 
+    except RequestNotFoundException as exc:
+        raise HTTPException(status_code=404, detail="Request Not Found") from exc
+    except (FileNotFoundException, ResultNotFoundException) as exc:
+        raise HTTPException(status_code=500, detail="Internal Server Error") from exc
+
+if __name__ == "__main__":
+    uvicorn.run("main:app", port=8080, log_level="info")
