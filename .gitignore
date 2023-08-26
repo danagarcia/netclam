@@ -1,0 +1,5 @@
+**pytest**
+**cache**
+**.venv**
+**/dist**
+**.coverage

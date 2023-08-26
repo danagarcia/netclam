@@ -1,4 +1,6 @@
 import pytest
+import runpy
+from fastapi import UploadFile
 from fastapi.testclient import TestClient
 from netclam_common.exception import FileNotFoundException, ResultNotFoundException, RequestNotFoundException
 from netclam_common.models.request import request
@@ -6,6 +8,7 @@ from netclam_common.models.result import result
 from netclam_common.models.file import file
 from netclam_cp.main import app
 from netclam_cp import version, api_name
+from netclam_cp.handler.upload_handler import write_file
 from unittest import mock
 
 mockRequestData = [
@@ -16,13 +19,13 @@ mockRequestData = [
         "updated_time": "2023-08-19 21:34:17.000000"
     },{
         "id": "939b91eb-a844-41f4-86b0-237e9df2839c",
-        "status": "COMPLETED",
+        "status": "COMPLETE",
         "created_time": "2023-08-19 21:34:17.000000",
         "updated_time": "2023-08-19 22:15:14.000000"
     },
     {
         "id": "72710413-b3d8-4883-ac30-8a03ee9dfccd",
-        "status": "COMPLETED",
+        "status": "COMPLETE",
         "created_time": "2023-08-19 21:36:17.000000",
         "updated_time": "2023-08-19 22:17:14.000000"
     }
@@ -55,7 +58,6 @@ mockResultData = [
         "decision_time": "2023-08-19 22:17:14.000000"
     }
 ]
-
 
 api_root = f"/v{version}/{api_name}"
 
@@ -126,3 +128,31 @@ def testGetRequestCompletedRequest_returns200(mock_file, mock_result, mock_reque
     mock_response['file'] = mockFileData[1].copy()
     assert response.status_code == 200
     assert response.json() == mock_response
+
+@mock.patch('netclam_cp.main.create_request')
+@mock.patch('netclam_cp.main.write_file')
+def testPostRequest_returns200(mock_write_file, mock_request, test_client):
+    mock_request.return_value = request(**mockRequestData[0])
+    mock_files = {"file": open("tests/resources/test_upload.txt", 'rb')}
+    response = test_client.post(api_root, files=mock_files)
+    mock_files['file'].close()
+    mock_response = mockRequestData[0].copy()
+    mock_write_file.assert_called_once()
+    assert response.status_code == 200
+    assert response.json() == mock_response
+
+def testPostRequestBadRequest_returns400(test_client):
+    response = test_client.post(api_root, data={"bad_field": "bad_data"})
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid Request: No File Provided"}
+
+@mock.patch('netclam_cp.main.create_request')
+@mock.patch('netclam_cp.main.write_file')
+def testPostRequestWithWriteFailure_returns500(mock_write_file, mock_request, test_client):
+    mock_request.return_value = request(**mockRequestData[0])
+    mock_files = {"file": open("tests/resources/test_upload.txt", 'rb')}
+    mock_write_file.side_effect = IOError("Mock IO Error")
+    response = test_client.post(api_root, files=mock_files)
+    mock_files['file'].close()
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Internal Server Error"}
