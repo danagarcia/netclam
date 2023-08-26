@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "netclam-common"
+version = "0.1.4"
+description = "Common utilizies for the NetClam OSS project."
+authors = ["Dana Garcia <dana_sean_garcia@live.com>"]
+readme = "README.md"
+packages = [{include = "netclam_common"}]
+
+[tool.poetry.dependencies]
+python = "^3.9"
+mysql-connector-python = "^8.1.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

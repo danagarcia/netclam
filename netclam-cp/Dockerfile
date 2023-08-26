@@ -14,4 +14,4 @@ RUN poetry install --no-dev
 
 EXPOSE 8080
 
-ENTRYPOINT ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+ENTRYPOINT ["python3", "netclam_cp/main.py"]

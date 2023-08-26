@@ -1,5 +1,8 @@
 from dataclasses import dataclass
 
+PENDING = "PENDING"
+COMPLETE = "COMPLETE"
+
 @dataclass
 class request:
 
