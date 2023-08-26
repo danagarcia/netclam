@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "netclam-common"
-version = "0.1.4"
+version = "0.1.5"
 description = "Common utilizies for the NetClam OSS project."
 authors = ["Dana Garcia <dana_sean_garcia@live.com>"]
 readme = "README.md"
